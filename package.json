@@ -3,8 +3,8 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "bunx next dev --turbopack",
-        "build": "bunx prisma generate && bun run next build",
+        "dev": "bunx --bun next dev --turbopack",
+        "build": "next build",
         "start": "next start",
         "lint": "next lint"
     },
