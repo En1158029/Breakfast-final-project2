@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { uploadMenuImage, addMenuItem, editMenuItem, getMenuItems, deleteMenuItem } from "@/app/actions/menu"; // 確保有這行
 
 export default function MenuManagementPage() {
     const [menuItems, setMenuItems] = useState([]);
@@ -19,78 +20,63 @@ export default function MenuManagementPage() {
     const [imageUrl, setImageUrl] = useState("");
 
     useEffect(() => {
-        const getMenu = async () => {
-            const response = await fetch("/api/menu");
-            if (!response.ok) {
-                alert("取得菜單失敗");
-                return;
-            }
-            const data = await response.json();
-            setMenuItems(data);
-        };
-        getMenu();
-    }, []);
-
-    const handleCreate = async (e) => {
-        e.preventDefault();
-        try {
-            const itemToSend = {
-                ...newItem,
-                price: parseFloat(newItem.price),
-            };
-
-            const response = await fetch("/api/menu", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(itemToSend),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-            const data = await response.json();
-            setMenuItems((prev) => [...prev, data]);
-            setNewItem({
-                name: "",
-                description: "",
-                price: 0,
-                imageUrl: "",
-                isAvailable: true,
-            });
-            setIsCreating(false);
-        } catch (error) {
-            console.error("發生錯誤:", error.message);
-        }
-    };
-
-    const handleImageUpload = async () => {
-        if (!imageFile) return;
-
-        const formData = new FormData();
-        formData.append("file", imageFile);
-
-        try {
-            const response = await fetch("/api/image/upload", {
-                method: "POST",
-                body: formData,
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "圖片上傳失敗");
-            }
-
-            setImageUrl(data.url);
-            setNewItem((prev) => ({ ...prev, imageUrl: data.url }));
-        } catch (err) {
-            console.error("圖片上傳失敗:", err.message);
+    const getMenu = async () => {
+        const result = await getMenuItems();
+        if (!result.success) {
+            alert("取得菜單失敗");
             return;
         }
+        setMenuItems(result.data);
     };
+    getMenu();
+}, []);
+
+    const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+        const itemToSend = {
+            ...newItem,
+            price: parseFloat(newItem.price),
+        };
+
+        const result = await addMenuItem(itemToSend);
+
+        if (!result.success) {
+            throw new Error("新增餐點失敗");
+        }
+
+        setMenuItems((prev) => [...prev, result.data]);
+        setNewItem({
+            name: "",
+            description: "",
+            price: 0,
+            imageUrl: "",
+            isAvailable: true,
+        });
+        setImageFile(null);
+        setImageUrl("");
+        setIsCreating(false);
+    } catch (error) {
+        console.error("發生錯誤:", error.message);
+    }
+};
+
+    const handleImageUpload = async () => {
+    if (!imageFile) return;
+
+    try {
+        const result = await uploadMenuImage(imageFile);
+
+        if (!result.success) {
+            throw new Error("圖片上傳失敗");
+        }
+
+        setImageUrl(result.url);
+        setNewItem((prev) => ({ ...prev, imageUrl: result.url }));
+    } catch (err) {
+        console.error("圖片上傳失敗:", err.message);
+    }
+};
 
     const startEditing = (item) => {
         setEditingId(item.id);
@@ -104,34 +90,41 @@ export default function MenuManagementPage() {
     };
 
     const handleEdit = async (menuId) => {
-        try {
-            const updatedItemToSend = {
-                ...editItem,
-                price: parseFloat(editItem.price),
-            };
+    try {
+        const updatedItemToSend = {
+            ...editItem,
+            price: parseFloat(editItem.price),
+        };
 
-            const response = await fetch(`/api/menu/${menuId}`, {
-                method: "PUT",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(updatedItemToSend),
-            });
+        const result = await editMenuItem(updatedItemToSend, menuId);
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText);
-            }
-            const updatedItem = await response.json();
-
-            setMenuItems((prev) =>
-                prev.map((item) => (item.id === menuId ? updatedItem : item))
-            );
-            setEditingId(null);
-        } catch (error) {
-            console.error("更新失敗:", error.message);
+        if (!result.success) {
+            throw new Error("更新餐點失敗");
         }
-    };
+
+        const updatedItem = result.data;
+
+        setMenuItems((prev) =>
+            prev.map((item) => (item.id === menuId ? updatedItem : item))
+        );
+        setEditingId(null);
+    } catch (error) {
+        console.error("更新失敗:", error.message);
+    }
+};
+
+const handleDelete = async (menuId) => {
+    const confirmed = confirm("確定要刪除這項餐點嗎？");
+    if (!confirmed) return;
+
+    const result = await deleteMenuItem(menuId);
+    if (result.success) {
+        setMenuItems((prev) => prev.filter((item) => item.id !== menuId));
+        setEditingId(null); // 同時結束編輯模式
+    } else {
+        alert("刪除失敗");
+    }
+};
 
     const cancelEdit = () => {
         setEditingId(null);
@@ -392,6 +385,13 @@ export default function MenuManagementPage() {
                                         </button>
                                         <button
                                             type="button"
+                                            onClick={() => handleDelete(item.id)} // <-- 這裡是關鍵
+                                            className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600"
+                                        >
+                                            刪除
+                                        </button>
+                                        <button
+                                            type="button"
                                             onClick={cancelEdit}
                                             className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700"
                                         >
@@ -405,18 +405,18 @@ export default function MenuManagementPage() {
                                 key={item.id}
                                 className="bg-white rounded-xl shadow-lg p-5 hover:shadow-xl transition relative"
                             >
-                                {item.imageUrl ? (
-                                    <Image
-                                        src={item.imageUrl}
-                                        alt={item.name}
-                                        width={400}
-                                        height={250}
-                                        className="rounded-md w-full h-48 object-cover mb-4"
-                                    />
+                                {typeof item.imageUrl === "string" && item.imageUrl.trim() !== "" ? (
+                                <Image
+                                    src={item.imageUrl}
+                                    alt={item.name || "餐點圖片"}
+                                    width={400}
+                                    height={250}
+                                    className="rounded-md w-full h-48 object-cover mb-4"
+                                />
                                 ) : (
-                                    <div className="flex justify-center items-center rounded-md w-full h-48 object-cover mb-4">
-                                        無圖片
-                                    </div>
+                                <div className="flex justify-center items-center rounded-md w-full h-48 bg-gray-100 text-gray-500 mb-4">
+                                    無圖片
+                                </div>
                                 )}
 
                                 <h3 className="text-lg font-bold text-gray-800 mb-1">

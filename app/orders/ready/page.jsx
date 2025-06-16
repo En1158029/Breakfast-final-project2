@@ -1,3 +1,4 @@
+// ✅ /orders/ready/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,6 +10,7 @@ import {
     getOrderById,
     getReadyOrders,
 } from "@/app/actions/order";
+import { getKitchenReadyOrderTopic, getStaffCompletedOrderTopic } from "@/utils/mqttTopic";
 
 export default function ReadyOrdersPage() {
     const [orders, setOrders] = useState([]);
@@ -21,54 +23,35 @@ export default function ReadyOrdersPage() {
     });
 
     useEffect(() => {
-        if (userLoading) {
-            return;
-        }
-        setTopic(getKitchenReadyOrderTopic("#"));
+        if (userLoading || !user?.id) return;
+        setTopic(getKitchenReadyOrderTopic(user.id));
 
         const getOrders = async () => {
             try {
-                // action
                 let data = await getReadyOrders();
                 if (!data) {
-                    // api
                     const response = await fetch(`/api/orders/ready`);
-                    if (!response.ok) {
-                        alert("獲取完成訂單失敗");
-                        return;
-                    }
+                    if (!response.ok) throw new Error();
                     data = await response.json();
                 }
                 setOrders(data);
                 setLoading(false);
-            } catch (err) {
+            } catch {
                 alert("獲取完成訂單失敗");
             }
         };
         getOrders();
     }, [userLoading]);
 
-    // 當接收到 MQTT 訊息時，更新訂單列表
     useEffect(() => {
         if (messages.length === 0) return;
-
         const lastMessage = messages[messages.length - 1];
 
         try {
             const newOrder = JSON.parse(lastMessage.payload);
-
             setOrders((prev) => {
-                // 檢查是否已存在相同 ID 的訂單
                 const exists = prev.some((order) => order.id === newOrder.id);
-                return exists
-                    ? prev
-                    : [
-                          ...prev,
-                          {
-                              ...newOrder,
-                              id: newOrder.orderId || newOrder.id,
-                          },
-                      ];
+                return exists ? prev : [...prev, { ...newOrder, id: newOrder.orderId || newOrder.id }];
             });
         } catch (err) {
             console.error("無法解析 MQTT 訊息:", err);
@@ -76,56 +59,46 @@ export default function ReadyOrdersPage() {
     }, [messages]);
 
     const handleCompleteButton = async (orderId) => {
-        let data = await editOrderStatus({ status: "COMPLETED" }, orderId);
-        if (!data) {
-            const response = await fetch(`/api/orders/${orderId}/status`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ status: "COMPLETED" }),
+        try {
+            let data = await editOrderStatus({ status: "COMPLETED" }, orderId);
+            if (!data) {
+                const response = await fetch(`/api/orders/${orderId}/status`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: "COMPLETED" }),
+                });
+                if (!response.ok) throw new Error();
+            }
+
+            setOrders(orders.filter((o) => o.id !== orderId));
+
+            let orderData = await getOrderById(orderId);
+            if (!orderData) {
+                const orderRes = await fetch(`/api/orders/${orderId}`);
+                if (!orderRes.ok) throw new Error();
+                orderData = await orderRes.json();
+            }
+
+            const customerId = orderData.customer?.id;
+            const completedTopic = getStaffCompletedOrderTopic(customerId);
+            publishMessage(completedTopic, {
+                orderId: orderData.id,
+                status: "COMPLETED",
+                completedAt: new Date().toISOString(),
             });
-            if (!response.ok) {
-                alert("修改訂單狀態失敗");
-                return;
-            }
+        } catch {
+            alert("更新訂單狀態失敗");
         }
-
-        setOrders(orders.filter((o) => o.id !== orderId));
-        // action
-        let orderData = await getOrderById(orderId);
-        if (!orderData) {
-            // api
-            const orderRes = await fetch(`/api/orders/${orderId}`);
-            if (!orderRes.ok) {
-                alert("獲取訂單詳情失敗");
-                return;
-            }
-            orderData = await orderRes.json();
-        }
-
-        // 取出訂單的顧客 ID
-        const customerId = orderData.customer?.id;
-
-        // TODO: 設定 MQTT 主題
-        const topic = "";
-        // TODO: 準備發布交易完成的 MQTT 訊息
-
-        // TODO: 發布交易完成的 MQTT 訊息
     };
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-pink-50 to-red-50 py-10 px-6">
             <div className="max-w-5xl mx-auto">
-                <h1 className="text-3xl font-bold text-gray-800 mb-8">
-                    🍱 完成的訂單
-                </h1>
-
+                <h1 className="text-3xl font-bold text-gray-800 mb-8">🍱 完成的訂單</h1>
                 {loading ? (
                     <div className="space-y-4">
                         {[...Array(3)].map((_, i) => (
-                            <div
-                                key={i}
-                                className="animate-pulse h-24 bg-white rounded-lg shadow"
-                            />
+                            <div key={i} className="animate-pulse h-24 bg-white rounded-lg shadow" />
                         ))}
                     </div>
                 ) : orders.length === 0 ? (
@@ -133,10 +106,7 @@ export default function ReadyOrdersPage() {
                         🎉 目前沒有完成的訂單
                     </div>
                 ) : (
-                    <motion.div
-                        layout
-                        className="grid grid-cols-1 sm:grid-cols-2 gap-6"
-                    >
+                    <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         {orders.map((order) => (
                             <motion.div
                                 key={order.id}
@@ -156,24 +126,18 @@ export default function ReadyOrdersPage() {
                                     {order.items.map((item, idx) => (
                                         <li key={idx}>
                                             {item.menuItem.name}
-
                                             <p className="text-xs text-gray-500 ml-4">
                                                 備註：{item.specialRequest}
                                             </p>
                                         </li>
                                     ))}
                                 </ul>
-
                                 <p className="text-xs text-gray-500">
-                                    訂單建立時間：{order.createdAt}
+                                    訂單建立時間：{new Date(order.createdAt).toLocaleString()}
                                 </p>
                                 <button
                                     className="mt-4 w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-md font-semibold transition"
-                                    onClick={() => {
-                                        handleCompleteButton(
-                                            order.orderId || order.id
-                                        );
-                                    }}
+                                    onClick={() => handleCompleteButton(order.orderId || order.id)}
                                 >
                                     ✅ 已交付
                                 </button>

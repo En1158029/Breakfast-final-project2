@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useNotifications from "@/hooks/useNotifications";
 import useUser from "@/hooks/useUser";
-import { deleteNotification } from "@/app/actions/notification";
+import { deleteNotification, markAllNotificationsRead } from "@/app/actions/notification";
 
 export default function NotifyButton() {
     const [showNotify, setShowNotify] = useState(false);
@@ -12,22 +12,20 @@ export default function NotifyButton() {
     const wrapperRef = useRef(null);
 
     useEffect(() => {
-        if (loading) {
-            return;
-        }
+        if (loading) return;
+
         const handleClickOutside = (event) => {
-            if (
-                wrapperRef.current &&
-                !wrapperRef.current.contains(event.target)
-            ) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
                 setShowNotify(false);
             }
         };
+
         if (showNotify) {
             document.addEventListener("mousedown", handleClickOutside);
         } else {
             document.removeEventListener("mousedown", handleClickOutside);
         }
+
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
         };
@@ -36,38 +34,25 @@ export default function NotifyButton() {
     const handelClickNotificationButton = async () => {
         setShowNotify((prev) => !prev);
         setNotifications(
-            notifications.map((n) => {
-                return { ...n, read: true };
-            })
+            notifications.map((n) => ({ ...n, read: true }))
         );
 
         try {
-            const response = await fetch(
-                `/api/notifications/users/${user.id}/isRead`,
-                {
-                    method: "PATCH",
-                }
-            );
-            if (!response.ok) {
-                alert("切換已讀通知失敗");
-            }
+            await markAllNotificationsRead(user.id);
         } catch (err) {
-            alert("錯誤：", err);
+            alert("切換已讀通知失敗");
         }
     };
+
     const handleDeleteNotification = async (nId) => {
         const data = await deleteNotification(nId);
         if (!data) {
-            const response = await fetch(`/api/notifications/${nId}`, {
-                method: "DELETE",
-            });
-            if (!response.ok) {
-                alert("刪除通知失敗");
-                return;
-            }
+            alert("刪除通知失敗");
+            return;
         }
         setNotifications(notifications.filter((n) => n.id !== nId));
     };
+
     return (
         <div className="relative" ref={wrapperRef}>
             <button
@@ -89,15 +74,13 @@ export default function NotifyButton() {
                         <ul className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
                             {notifications.map((n) => (
                                 <li
-                                    key={n.id}
+                                    key={`notification-${n.id}`}
                                     className="px-4 py-3 hover:bg-gray-100 transition"
                                 >
                                     <div className="font-semibold flex justify-between text-gray-800">
                                         <p>{n.title}</p>
                                         <button
-                                            onClick={() =>
-                                                handleDeleteNotification(n.id)
-                                            }
+                                            onClick={() => handleDeleteNotification(n.id)}
                                             style={{
                                                 width: "32px",
                                                 height: "32px",
@@ -110,12 +93,8 @@ export default function NotifyButton() {
                                             X
                                         </button>
                                     </div>
-                                    <div className="text-sm text-gray-800">
-                                        {n.content}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                        {n.time}
-                                    </div>
+                                    <div className="text-sm text-gray-800">{n.content}</div>
+                                    <div className="text-xs text-gray-500">{n.time}</div>
                                 </li>
                             ))}
                         </ul>

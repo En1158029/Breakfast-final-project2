@@ -5,6 +5,7 @@ import { useMqttClient } from "@/hooks/useMqttClient";
 import { editOrderStatus, getKitchenOrders } from "@/app/actions/order";
 import { addNotification } from "@/app/actions/notification";
 import { getKitchenOrderTopic } from "@/utils/mqttTopic";
+import { getKitchenReadyOrderTopic } from "@/utils/mqttTopic"; // 確保有這行
 
 export default function KitchenPage() {
     const [orders, setOrders] = useState([]);
@@ -112,12 +113,20 @@ export default function KitchenPage() {
                 notificationRes = await response.json();
             }
 
-            const readyNotificationTopic = ""; // TODO: 設定 MQTT 主題
+            const readyNotificationTopic = getKitchenReadyOrderTopic(customerId);
 
             // 準備發布 MQTT 訊息
             if (notificationRes && notificationRes.id) {
-                // TODO: 準備要發布的 MQTT 訊息
-                // TODO: 發布 MQTT 訊息
+                await publishMessage(readyNotificationTopic, {
+                id: notificationRes.id,
+                title: "訂單",
+                type: "order",
+                content: `可領取訂單 ${orderId.slice(0, 8)}`,
+                read: false,
+                time: new Date().toLocaleString(),
+                status: "READY",
+                orderId: orderId,
+                });
             }
         } catch (error) {
             console.error("完成訂單失敗:", error);

@@ -35,14 +35,20 @@ export default function CheckoutPage() {
 
         const getMenu = async () => {
             try {
-                // action
-                let data = await getMenuItems();
-                if (!data) {
+                let result = await getMenuItems();
+                let data = [];
+
+                if (result && result.success) {
+                    data = result.data;
+                } else {
                     const response = await fetch("/api/menu");
+                    if (!response.ok) throw new Error("API menu 錯誤");
                     data = await response.json();
                 }
+
                 setMenuItems(data);
             } catch (err) {
+                console.error("取得菜單失敗", err);
                 alert("取得菜單失敗");
             }
         };
@@ -67,11 +73,16 @@ export default function CheckoutPage() {
             }));
             const customerId = user.id;
 
-            // action
+            if (!customerId) {
+                alert("請重新登入");
+                return;
+            }
+
             let orderData = await addOrder({
                 orderItems,
                 customerId,
             });
+
             if (!orderData) {
                 const response = await fetch(`/api/orders`, {
                     method: "POST",
@@ -87,13 +98,13 @@ export default function CheckoutPage() {
                 }
                 orderData = await response.json();
             }
+
             // TODO: 發布 MQTT 訊息
 
-            // 清空購物車
             sessionStorage.removeItem("cart");
-            // 回到訂單頁面
             window.location.href = "/orders";
         } catch (err) {
+            console.error("送出訂單失敗", err);
             alert("送出訂單失敗");
         } finally {
             setIsSubmitting(false);
