@@ -4,7 +4,7 @@
     "private": true,
     "scripts": {
         "dev": "bunx next dev --turbopack",
-        "build": "next build",
+        "build": "bunx prisma generate && bun run next build",
         "start": "next start",
         "lint": "next lint"
     },
